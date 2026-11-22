@@ -1,0 +1,121 @@
+# {{ ansible_managed }}
+
+# ---- HTTP (port 80) ----------------------------------------------------------
+# Known names: Let's Encrypt challenge + redirect to HTTPS
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ site_domain }} {{ pma_domain }};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# Anything else (bare IP, unknown name) -> the WordPress site
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    return 301 https://{{ site_domain }}$request_uri;
+}
+
+# ---- HTTPS (port 443) --------------------------------------------------------
+# Shared TLS + security settings (certificate chosen at container start)
+ssl_certificate     /etc/nginx/tls/fullchain.pem;
+ssl_certificate_key /etc/nginx/tls/privkey.pem;
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name _;
+    return 301 https://{{ site_domain }}$request_uri;
+}
+
+# WordPress
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name {{ site_domain }};
+
+    root /var/www/html;
+    index index.php;
+    client_max_body_size 32m;   # matches PHP upload_max_filesize
+
+    include /etc/nginx/tls/hsts.conf;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    # Which server answered (useful with several servers in parallel)
+    add_header X-Served-By {{ inventory_hostname }} always;
+{% if nginx_server_badge %}
+    # Small visible "served by" badge injected into WordPress pages
+    sub_filter '</body>' '<div style="position:fixed;bottom:8px;right:8px;padding:4px 8px;font:12px monospace;background:#222;color:#fff;border-radius:4px;opacity:.7;z-index:99999">served by {{ inventory_hostname }}</div></body>';
+    sub_filter_once on;
+{% endif %}
+
+    # Variable = resolved at request time (see resolver in nginx.conf)
+    set $wordpress_upstream wordpress:9000;
+
+    # Hidden files (.htaccess, .git...) and known attack targets
+    location ~ /\.(?!well-known) { deny all; }
+    location = /xmlrpc.php { deny all; }
+    # Never execute PHP from the uploads folder
+    location ~* ^/wp-content/uploads/.*\.php$ { deny all; }
+
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+
+    location ~ \.php$ {
+        try_files $uri =404;
+        fastcgi_pass $wordpress_upstream;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    }
+
+    location ~* \.(css|js|png|jpe?g|gif|ico|svg|webp|woff2?)$ {
+        expires 30d;
+        access_log off;
+        try_files $uri =404;
+    }
+}
+
+# phpMyAdmin
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name {{ pma_domain }};
+
+    root /var/www/phpmyadmin;
+    index index.php;
+    client_max_body_size 32m;
+
+    include /etc/nginx/tls/hsts.conf;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header X-Served-By {{ inventory_hostname }} always;
+
+    set $phpmyadmin_upstream phpmyadmin:9000;
+
+    location ~ /\. { deny all; }
+    # Internal folders that must never be served directly
+    location ~ ^/(libraries|templates|vendor|sql|tmp)/ { deny all; }
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    location ~ \.php$ {
+        try_files $uri =404;
+        fastcgi_pass $phpmyadmin_upstream;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    }
+}

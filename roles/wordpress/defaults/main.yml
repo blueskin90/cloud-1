@@ -1,0 +1,2 @@
+---
+wordpress_dir: "{{ project_dir }}/wordpress"

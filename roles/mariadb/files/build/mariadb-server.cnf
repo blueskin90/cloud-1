@@ -1,0 +1,16 @@
+# Replaces Alpine's default file, which contains "skip-networking".
+[mysqld]
+user = mysql
+datadir = /var/lib/mysql
+socket = /run/mysqld/mysqld.sock
+port = 3306
+# Listen on all interfaces INSIDE the container. This is safe: the container
+# is only attached to the internal "backend" Docker network and publishes no
+# port on the host, so only WordPress/phpMyAdmin can reach it.
+bind-address = 0.0.0.0
+skip-name-resolve
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+
+[client]
+socket = /run/mysqld/mysqld.sock

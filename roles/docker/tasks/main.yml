@@ -1,0 +1,78 @@
+---
+- name: Remove conflicting distro Docker packages
+  ansible.builtin.apt:
+    name: "{{ docker_conflicting_packages }}"
+    state: absent
+
+- name: Install python3-debian (required by deb822_repository)
+  ansible.builtin.apt:
+    name: python3-debian
+    state: present
+
+# deb822 format (.sources file); signed_by downloads Docker's GPG key so only
+# packages signed by Docker are accepted from this repository.
+- name: Add Docker apt repository
+  ansible.builtin.deb822_repository:
+    name: docker
+    types: deb
+    uris: https://download.docker.com/linux/ubuntu
+    suites: "{{ ansible_facts['distribution_release'] }}"
+    components: stable
+    architectures: "{{ docker_arch_map[ansible_facts['architecture']] }}"
+    signed_by: https://download.docker.com/linux/ubuntu/gpg
+
+- name: Install Docker Engine and Compose plugin
+  ansible.builtin.apt:
+    name: "{{ docker_packages }}"
+    state: present
+    update_cache: true
+
+- name: Configure Docker daemon (log rotation so logs can't fill the disk)
+  ansible.builtin.template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    mode: "0644"
+  notify: Restart docker
+
+# enabled: true -> Docker starts at boot, then containers with a restart
+# policy come back automatically (subject: site restarts after reboot).
+- name: Ensure Docker is running and enabled at boot
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Create project directory
+  ansible.builtin.file:
+    path: "{{ project_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Create secrets directory (root only)
+  ansible.builtin.file:
+    path: "{{ secrets_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+# Main entry point for admins: "cd /opt/cloud-1 && docker compose ps|up -d|restart <svc>".
+# It includes the compose file written by each service role.
+- name: Write main docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ project_dir }}/docker-compose.yml"
+    mode: "0644"
+
+# Networks are created here (not in compose) so each service role can be
+# deployed on its own and still join the same networks.
+- name: Create frontend network (nginx <-> php containers)
+  community.docker.docker_network:
+    name: "{{ docker_network_frontend }}"
+
+- name: Create backend network (internal = no route to the internet)
+  community.docker.docker_network:
+    name: "{{ docker_network_backend }}"
+    internal: true

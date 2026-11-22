@@ -1,0 +1,40 @@
+# {{ ansible_managed }}
+services:
+  mariadb:
+    image: {{ mariadb_image }}
+    build:
+      context: {{ mariadb_dir }}/build
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: {{ db_name }}
+      MARIADB_USER: {{ db_user }}
+    secrets:
+      - db_root_password
+      - db_password
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - backend
+    # No "ports:" on purpose -> not reachable from outside the Docker network.
+    healthcheck:
+      # "ping" succeeds as soon as the server answers, no credentials needed.
+      test: ["CMD", "mariadb-admin", "ping", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  db_data:
+    name: cloud1_db_data
+
+networks:
+  backend:
+    name: {{ docker_network_backend }}
+    external: true
+
+secrets:
+  db_root_password:
+    file: {{ secrets_dir }}/db_root_password
+  db_password:
+    file: {{ secrets_dir }}/db_password

@@ -1,0 +1,9 @@
+---
+# Image tags = hash of the build files (see roles/mariadb/vars/main.yml)
+nginx_build_paths: "{{ ['Dockerfile', 'nginx.conf', 'entrypoint.sh'] | map('regex_replace', '^', role_path ~ '/files/nginx/') }}"
+nginx_image: "cloud1/nginx:{{ (query('ansible.builtin.file', *nginx_build_paths) | join) | hash('sha1') | truncate(12, true, '', 0) }}"
+nginx_certbot_image: "cloud1/certbot:{{ lookup('ansible.builtin.file', role_path ~ '/files/certbot/Dockerfile') | hash('sha1') | truncate(12, true, '', 0) }}"
+
+# docker compose command for this role's compose file (used by certbot tasks and cron)
+nginx_compose_cmd: "docker compose -p {{ compose_project }} -f {{ nginx_dir }}/compose.yml"
+nginx_le_cert: "/var/lib/docker/volumes/cloud1_letsencrypt/_data/live/{{ site_domain }}/fullchain.pem"

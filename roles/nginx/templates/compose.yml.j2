@@ -1,0 +1,62 @@
+# {{ ansible_managed }}
+services:
+  nginx:
+    image: {{ nginx_image }}
+    build:
+      context: {{ nginx_dir }}/build/nginx
+    restart: unless-stopped
+    environment:
+      SITE_DOMAIN: {{ site_domain }}
+      PMA_DOMAIN: {{ pma_domain }}
+    # The ONLY published ports of the whole stack
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - {{ nginx_dir }}/conf:/etc/nginx/http.d:ro
+      # Static files of the PHP apps (read-only)
+      - wp_data:/var/www/html:ro
+      - pma_app:/var/www/phpmyadmin:ro
+      # Certificates written by certbot (read-only here)
+      - letsencrypt:/etc/letsencrypt:ro
+      - acme_webroot:/var/www/acme:ro
+      - tls_selfsigned:/etc/nginx/selfsigned
+    networks:
+      - frontend
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "443"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # One-shot tool, never started by "up" (profile). Used by Ansible and cron:
+  #   docker compose run --rm certbot <args>
+  certbot:
+    image: {{ nginx_certbot_image }}
+    build:
+      context: {{ nginx_dir }}/build/certbot
+    profiles: [tools]
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - acme_webroot:/var/www/acme
+    networks:
+      - frontend   # needs internet access to reach Let's Encrypt
+
+volumes:
+  # Same definitions as in the wordpress/phpmyadmin compose files
+  wp_data:
+    name: cloud1_wp_data
+  pma_app:
+    name: cloud1_pma_app
+  letsencrypt:
+    name: cloud1_letsencrypt
+  acme_webroot:
+    name: cloud1_acme_webroot
+  tls_selfsigned:
+    name: cloud1_tls_selfsigned
+
+networks:
+  frontend:
+    name: {{ docker_network_frontend }}
+    external: true

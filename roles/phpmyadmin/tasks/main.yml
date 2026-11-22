@@ -1,0 +1,43 @@
+---
+- name: Create phpmyadmin directory
+  ansible.builtin.file:
+    path: "{{ phpmyadmin_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Copy image build files
+  ansible.builtin.copy:
+    src: build/
+    dest: "{{ phpmyadmin_dir }}/build/"
+    mode: "0644"
+
+# Random 32-character key, generated ON THE SERVER the first time only
+# (force: false = never overwrite). Nothing to store in the vault, and the
+# value stays stable across runs, so login cookies survive redeploys.
+- name: Generate phpMyAdmin cookie encryption key (first run only)
+  ansible.builtin.copy:
+    content: "{{ lookup('ansible.builtin.password', '/dev/null', length=32, chars=['ascii_letters', 'digits']) }}"
+    dest: "{{ secrets_dir }}/pma_blowfish_secret"
+    mode: "0600"
+    force: false
+  no_log: true
+
+- name: Write phpmyadmin compose file
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ phpmyadmin_dir }}/compose.yml"
+    mode: "0644"
+
+- name: Start phpmyadmin container
+  community.docker.docker_compose_v2:
+    project_src: "{{ project_dir }}"
+    project_name: "{{ compose_project }}"
+    files: ["{{ phpmyadmin_dir }}/compose.yml"]
+    build: policy
+    # Our images are built locally, never downloaded (no useless Docker Hub lookups)
+    pull: never
+    state: present
+    wait: true
+    wait_timeout: 120
+  environment:
+    COMPOSE_IGNORE_ORPHANS: "true"

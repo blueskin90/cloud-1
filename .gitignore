@@ -1,0 +1,11 @@
+# Secrets: never commit these
+.vault_pass
+group_vars/all/vault.yml
+*.env
+.env
+
+# Local inventory (your own server IPs)
+inventory/hosts.ini
+
+# Ansible artifacts
+*.retry

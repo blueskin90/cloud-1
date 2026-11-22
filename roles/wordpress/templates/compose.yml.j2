@@ -1,0 +1,49 @@
+# {{ ansible_managed }}
+services:
+  wordpress:
+    image: {{ wordpress_image }}
+    build:
+      context: {{ wordpress_dir }}/build
+    restart: unless-stopped
+    environment:
+      WP_URL: https://{{ site_domain }}
+      WP_TITLE: {{ wp_title | to_json }}
+      WP_ADMIN_USER: {{ wp_admin_user | to_json }}
+      WP_ADMIN_EMAIL: {{ wp_admin_email | to_json }}
+      WORDPRESS_DB_HOST: mariadb
+      WORDPRESS_DB_NAME: {{ db_name }}
+      WORDPRESS_DB_USER: {{ db_user }}
+    secrets:
+      - db_password
+      - wp_admin_password
+    volumes:
+      # Shared with nginx (read-only there) so it can serve static files
+      - wp_data:/var/www/html
+    networks:
+      - frontend   # reached by nginx (FastCGI on 9000)
+      - backend    # reaches mariadb
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # first start = copy files + wait for DB + install
+      start_period: 120s
+
+volumes:
+  wp_data:
+    name: cloud1_wp_data
+
+networks:
+  frontend:
+    name: {{ docker_network_frontend }}
+    external: true
+  backend:
+    name: {{ docker_network_backend }}
+    external: true
+
+secrets:
+  db_password:
+    file: {{ secrets_dir }}/db_password
+  wp_admin_password:
+    file: {{ secrets_dir }}/wp_admin_password

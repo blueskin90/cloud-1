@@ -1,0 +1,31 @@
+---
+# Non-secret settings shared by all hosts.
+# Secrets live in vault.yml (encrypted with ansible-vault) and are referenced here.
+
+project_dir: /opt/cloud-1
+secrets_dir: "{{ project_dir }}/secrets"   # root-only, one file per secret
+compose_project: cloud1
+# Services included by the main docker-compose.yml (one role each)
+cloud1_services: [mariadb, wordpress, phpmyadmin, nginx]
+docker_network_backend: cloud1_backend   # internal: DB lives here, no internet exposure
+docker_network_frontend: cloud1_frontend # nginx <-> php containers
+
+# Fallback to nip.io so subdomain routing works on any IP without DNS setup
+site_domain: "{{ domain | default(ansible_host ~ '.nip.io') }}"
+pma_domain: "pma.{{ site_domain }}"
+
+# Database
+db_name: wordpress
+db_user: wordpress
+db_password: "{{ vault_db_password }}"
+db_root_password: "{{ vault_db_root_password }}"
+
+# WordPress
+wp_title: Cloud-1
+wp_admin_user: "{{ vault_wp_admin_user }}"
+wp_admin_password: "{{ vault_wp_admin_password }}"
+wp_admin_email: "{{ vault_wp_admin_email }}"
+
+# TLS: Let's Encrypt only when a real domain is set, self-signed otherwise
+tls_use_letsencrypt: "{{ domain is defined }}"
+letsencrypt_email: "{{ vault_letsencrypt_email | default('') }}"

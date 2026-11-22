@@ -1,0 +1,8 @@
+---
+common_supported_versions: ["22.04", "24.04"]
+common_timezone: Europe/Paris
+common_packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - python3-requests   # needed by community.docker modules on the host

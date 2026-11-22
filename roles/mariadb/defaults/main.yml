@@ -1,0 +1,2 @@
+---
+mariadb_dir: "{{ project_dir }}/mariadb"

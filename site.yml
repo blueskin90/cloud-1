@@ -1,0 +1,21 @@
+---
+# Full deployment. Each role can also be run on its own with --tags <role>.
+#   ansible-playbook site.yml                 # everything
+#   ansible-playbook site.yml --tags mariadb  # only the database
+
+- name: Prepare host
+  hosts: cloud1
+  become: true
+  roles:
+    - { role: common, tags: [common] }
+    - { role: security, tags: [security] }
+    - { role: docker, tags: [docker] }
+
+- name: Deploy services
+  hosts: cloud1
+  become: true
+  roles:
+    - { role: mariadb, tags: [mariadb] }
+    - { role: wordpress, tags: [wordpress] }
+    - { role: phpmyadmin, tags: [phpmyadmin] }
+    - { role: nginx, tags: [nginx] }

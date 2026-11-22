@@ -1,0 +1,9 @@
+---
+# The image tag is a hash of the build files: if any of them changes, the tag
+# changes, so Compose builds the new image and recreates the container.
+# If nothing changed, the image already exists and nothing happens (idempotent).
+mariadb_build_dir: "{{ role_path }}/files/build"
+mariadb_build_files: [Dockerfile, entrypoint.sh, mariadb-server.cnf]
+mariadb_build_paths: "{{ mariadb_build_files | map('regex_replace', '^', mariadb_build_dir ~ '/') }}"
+mariadb_image_tag: "{{ (query('ansible.builtin.file', *mariadb_build_paths) | join) | hash('sha1') | truncate(12, true, '', 0) }}"
+mariadb_image: "cloud1/mariadb:{{ mariadb_image_tag }}"

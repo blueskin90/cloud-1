@@ -1,0 +1,7 @@
+---
+nginx_dir: "{{ project_dir }}/nginx"
+# Visible "served by <host>" badge on WordPress pages
+nginx_server_badge: true
+# Use Let's Encrypt's staging server while testing: it has much higher rate
+# limits, but issues certificates browsers don't trust.
+nginx_letsencrypt_staging: false

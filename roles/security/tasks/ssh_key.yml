@@ -1,0 +1,9 @@
+---
+# Used by bootstrap.yml (first contact, password login) AND by the main
+# security tasks, so the key is always in place BEFORE password login is
+# disabled -> no lockout.
+- name: Authorize admin SSH public key for the connection user
+  ansible.posix.authorized_key:
+    user: "{{ ansible_user | default(lookup('ansible.builtin.env', 'USER')) }}"
+    key: "{{ lookup('ansible.builtin.file', security_ssh_public_key_file) }}"
+    state: present

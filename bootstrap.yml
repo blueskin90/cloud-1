@@ -1,0 +1,14 @@
+---
+# Run ONCE on a fresh server, using the password from the provider:
+#   ansible-playbook bootstrap.yml --ask-pass
+# It only installs your SSH public key. After that, use site.yml (key-based).
+
+- name: Bootstrap SSH key access
+  hosts: cloud1
+  gather_facts: false
+  become: false   # we only write the connection user's own authorized_keys
+  tasks:
+    - name: Install admin SSH key
+      ansible.builtin.include_role:
+        name: security
+        tasks_from: ssh_key

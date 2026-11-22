@@ -1,0 +1,11 @@
+---
+security_ssh_port: 22
+# Only these ports are reachable from outside (subject: 22, 80, 443)
+security_allowed_ports:
+  - { port: "80", proto: tcp }
+  - { port: "443", proto: tcp }
+# Disable SSH password login. Make sure your SSH key works BEFORE enabling this.
+security_ssh_disable_password: true
+# Public key (on YOUR laptop) authorized for the SSH user on the servers.
+# Override per host/group if needed.
+security_ssh_public_key_file: "~/.ssh/id_ed25519.pub"

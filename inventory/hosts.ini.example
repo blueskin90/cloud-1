@@ -1,0 +1,12 @@
+# Copy to inventory/hosts.ini and fill in your servers.
+# Every host listed here gets the full stack, deployed in parallel.
+#
+# domain: optional. If omitted, <ip>.nip.io is used and a self-signed cert is generated.
+
+[cloud1]
+server1 ansible_host=203.0.113.10 domain=yourname.duckdns.org
+# server2 ansible_host=203.0.113.11
+
+[cloud1:vars]
+ansible_user=ubuntu
+ansible_python_interpreter=/usr/bin/python3

@@ -1,0 +1,7 @@
+---
+# Image tag = hash of the build files (see roles/mariadb/vars/main.yml)
+wordpress_build_dir: "{{ role_path }}/files/build"
+wordpress_build_files: [Dockerfile, entrypoint.sh, php-fpm.conf, www.conf, wordpress.ini]
+wordpress_build_paths: "{{ wordpress_build_files | map('regex_replace', '^', wordpress_build_dir ~ '/') }}"
+wordpress_image_tag: "{{ (query('ansible.builtin.file', *wordpress_build_paths) | join) | hash('sha1') | truncate(12, true, '', 0) }}"
+wordpress_image: "cloud1/wordpress:{{ wordpress_image_tag }}"

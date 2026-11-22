@@ -1,0 +1,4 @@
+---
+- name: Reload nginx
+  ansible.builtin.command: "{{ nginx_compose_cmd }} exec -T nginx nginx -s reload"
+  changed_when: true

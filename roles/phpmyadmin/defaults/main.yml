@@ -1,0 +1,2 @@
+---
+phpmyadmin_dir: "{{ project_dir }}/phpmyadmin"

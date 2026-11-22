@@ -1,0 +1,39 @@
+# {{ ansible_managed }}
+services:
+  phpmyadmin:
+    image: {{ phpmyadmin_image }}
+    build:
+      context: {{ phpmyadmin_dir }}/build
+    restart: unless-stopped
+    environment:
+      PMA_DB_HOST: mariadb
+    secrets:
+      - pma_blowfish_secret
+    volumes:
+      # Code only, shared read-only with nginx so it can serve CSS/JS
+      - pma_app:/var/www/phpmyadmin
+    networks:
+      - frontend   # reached by nginx (FastCGI on 9000)
+      - backend    # reaches mariadb
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  pma_app:
+    name: cloud1_pma_app
+
+networks:
+  frontend:
+    name: {{ docker_network_frontend }}
+    external: true
+  backend:
+    name: {{ docker_network_backend }}
+    external: true
+
+secrets:
+  pma_blowfish_secret:
+    file: {{ secrets_dir }}/pma_blowfish_secret

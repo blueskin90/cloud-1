@@ -1,0 +1,91 @@
+---
+- name: Create nginx directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
+    - "{{ nginx_dir }}"
+    - "{{ nginx_dir }}/conf"
+
+- name: Copy image build files (nginx + certbot)
+  ansible.builtin.copy:
+    src: "{{ item }}/"
+    dest: "{{ nginx_dir }}/build/{{ item }}/"
+    mode: "0644"
+  loop: [nginx, certbot]
+
+- name: Write site configuration (routing by domain)
+  ansible.builtin.template:
+    src: cloud1.conf.j2
+    dest: "{{ nginx_dir }}/conf/cloud1.conf"
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Write nginx compose file
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ nginx_dir }}/compose.yml"
+    mode: "0644"
+
+- name: Start nginx container
+  community.docker.docker_compose_v2:
+    project_src: "{{ project_dir }}"
+    project_name: "{{ compose_project }}"
+    files: ["{{ nginx_dir }}/compose.yml"]
+    services: [nginx]
+    build: policy
+    # Our images are built locally, never downloaded (no useless Docker Hub lookups)
+    pull: never
+    state: present
+    wait: true
+    wait_timeout: 60
+  environment:
+    COMPOSE_IGNORE_ORPHANS: "true"
+
+# ---- Let's Encrypt (only when a real domain is set) --------------------------
+- name: Obtain Let's Encrypt certificate
+  when: tls_use_letsencrypt | bool
+  block:
+    # "creates": skipped once the certificate exists -> idempotent.
+    # Renewals are handled by the cron job below, not by this task.
+    - name: Request certificate with certbot (HTTP-01 challenge via nginx)
+      ansible.builtin.command:
+        argv: >-
+          {{ nginx_compose_cmd.split() + ['run', '--rm', '--build', 'certbot', 'certonly',
+             '--webroot', '-w', '/var/www/acme',
+             '--cert-name', site_domain, '-d', site_domain, '-d', pma_domain,
+             '--agree-tos', '--non-interactive', '--no-eff-email']
+             + (['--email', letsencrypt_email] if letsencrypt_email else ['--register-unsafely-without-email'])
+             + (['--staging'] if nginx_letsencrypt_staging | bool else []) }}
+        creates: "{{ nginx_le_cert }}"
+      environment:
+        COMPOSE_IGNORE_ORPHANS: "true"
+      register: nginx_certbot
+      failed_when: false
+
+    # Not fatal: the site keeps working with the self-signed certificate
+    # (subject: "use TLS when possible").
+    - name: Warn if Let's Encrypt failed
+      ansible.builtin.debug:
+        msg: >-
+          Let's Encrypt failed, keeping the self-signed certificate. Check that
+          {{ site_domain }} and {{ pma_domain }} resolve to this server.
+          certbot said: {{ (nginx_certbot.stderr | default('')) | regex_replace('\s+', ' ') | truncate(400) }}
+      when: nginx_certbot.rc is defined and nginx_certbot.rc != 0
+
+    # The entrypoint picks the certificate at start -> restart (not reload)
+    - name: Restart nginx to switch to the Let's Encrypt certificate
+      ansible.builtin.command: "{{ nginx_compose_cmd }} restart nginx"
+      changed_when: true
+      when: nginx_certbot is changed and nginx_certbot.rc == 0
+
+- name: Daily certificate renewal (cron)
+  ansible.builtin.cron:
+    name: cloud1 certbot renew
+    hour: "3"
+    minute: "17"
+    job: >-
+      {{ nginx_compose_cmd }} run --rm certbot renew --quiet
+      && {{ nginx_compose_cmd }} exec -T nginx nginx -s reload >/dev/null 2>&1
+    state: "{{ 'present' if tls_use_letsencrypt | bool else 'absent' }}"

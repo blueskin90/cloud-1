@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+# Each service is defined by its own Ansible role in <service>/compose.yml.
+#   docker compose up -d             -> start everything at once
+#   docker compose restart wordpress -> restart one service
+#   docker compose ps / logs <svc>
+name: {{ compose_project }}
+
+include:
+{% for service in cloud1_services %}
+  - {{ service }}/compose.yml
+{% endfor %}

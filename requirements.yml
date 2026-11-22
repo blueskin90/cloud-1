@@ -1,0 +1,4 @@
+collections:
+  - name: community.docker   # docker_compose_v2, docker_network, docker_image_build
+  - name: community.general  # ufw
+  - name: ansible.posix      # authorized_key
