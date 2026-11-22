@@ -5,7 +5,121 @@ on one or more remote Ubuntu 22.04 / 24.04 servers with Ansible and Docker Compo
 
 ## Architecture
 
-TODO
+```
+                    Internet
+                       │  only 22 (SSH, rate-limited), 80, 443 open (ufw)
+┌──────────────────────┼───────────────────────────────────────────────┐
+│ Server (Ubuntu)      │                                               │
+│                      ▼                                               │
+│   ┌─────────────────────────────┐                                    │
+│   │ nginx            :80 :443   │  only container publishing ports   │
+│   │ TLS, routing by domain      │                                    │
+│   └───────┬──────────────┬──────┘                                    │
+│           │ FastCGI :9000│              network "frontend"           │
+│ ┌─────────▼──────┐ ┌─────▼──────────┐                                │
+│ │ wordpress      │ │ phpmyadmin     │                                │
+│ │ php-fpm 8.4    │ │ php-fpm 8.3    │                                │
+│ └─────────┬──────┘ └─────┬──────────┘                                │
+│           │ MySQL :3306  │              network "backend" (internal: │
+│        ┌──▼──────────────▼──┐                  no internet access)   │
+│        │ mariadb            │                                        │
+│        └────────────────────┘                                        │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Containers
+
+One process per container, each built from its own Dockerfile (Alpine base,
+layers ordered from least to most frequently changed for the build cache).
+
+| Container | Process | Networks | Published ports |
+|---|---|---|---|
+| nginx | nginx | frontend | 80, 443 |
+| wordpress | php-fpm (WordPress 7.1, wp-cli) | frontend, backend | none |
+| phpmyadmin | php-fpm (phpMyAdmin 5.2) | frontend, backend | none |
+| mariadb | mariadbd | backend | none |
+| certbot | one-shot tool, run on demand (`docker compose run`) | frontend | none |
+
+Each entrypoint does its one-time setup only when needed (database
+initialisation, WordPress install, self-signed certificate), then `exec`s the
+main process so it runs as PID 1 and receives stop signals directly.
+
+### Routing
+
+| Request | Goes to |
+|---|---|
+| `http://…` | 301 → `https://…` (except `/.well-known/acme-challenge/` for Let's Encrypt) |
+| `https://<domain>` | WordPress |
+| `https://pma.<domain>` | phpMyAdmin |
+| bare IP / unknown name | 301 → `https://<domain>` |
+
+`<domain>` is the host's `domain=` inventory variable, or `<ip>.nip.io` when
+none is set, so routing works on any server without DNS setup.
+
+### TLS
+
+1. nginx always starts with a self-signed certificate, so HTTPS works from the first second.
+2. If a real `domain` is set, Ansible runs certbot (HTTP-01 challenge served by nginx),
+   then restarts nginx on the Let's Encrypt certificate. A failure is reported but not
+   fatal: the site stays on the self-signed certificate.
+3. A daily cron job renews the certificate and reloads nginx.
+
+HSTS is only sent with a real certificate.
+
+### Data and volumes
+
+Everything that must survive a reboot or a container re-creation lives in named
+volumes (`docker volume ls`):
+
+| Volume | Content |
+|---|---|
+| `cloud1_db_data` | MariaDB data |
+| `cloud1_wp_data` | WordPress files, uploads, plugins (read-only in nginx) |
+| `cloud1_pma_app` | phpMyAdmin code, refreshed at each start (read-only in nginx) |
+| `cloud1_letsencrypt`, `cloud1_acme_webroot` | Let's Encrypt certificates and challenges |
+| `cloud1_tls_selfsigned` | fallback certificate |
+
+Containers use `restart: unless-stopped` and Docker is enabled at boot, so the
+site comes back on its own after a reboot.
+
+### Secrets
+
+- Stored in `group_vars/all/vault.yml`, encrypted with ansible-vault and not committed.
+- Written on the server to `/opt/cloud-1/secrets/` (root only, mode 600), then mounted
+  into containers as Docker secrets (`/run/secrets/…`). They never appear in environment
+  variables, `docker inspect` or Ansible output (`no_log`).
+- The phpMyAdmin cookie key is generated on the server on the first run.
+
+### On the server
+
+```
+/opt/cloud-1/
+├── docker-compose.yml      # includes each service's compose.yml
+├── secrets/                # root only
+├── mariadb/   {compose.yml, build/}
+├── wordpress/ {compose.yml, build/}
+├── phpmyadmin/{compose.yml, build/}
+└── nginx/     {compose.yml, build/, conf/cloud1.conf}
+```
+
+```sh
+cd /opt/cloud-1
+sudo docker compose ps                  # status of all services
+sudo docker compose up -d               # start everything
+sudo docker compose restart wordpress   # restart one service
+sudo docker compose logs -f nginx
+```
+
+### Deployment flow (`site.yml`)
+
+1. **Prepare host**: `common` (OS check, packages) → `security` (SSH key, ufw,
+   SSH hardening, fail2ban) → `docker` (engine, networks, main compose file).
+2. **Deploy services**, in dependency order: `mariadb` → `wordpress` →
+   `phpmyadmin` → `nginx`. Each role copies its build files, writes its secrets
+   and compose file, then starts its container and waits until it is healthy.
+
+Image tags are a hash of their build files: an image is only rebuilt when its
+Dockerfile, config or entrypoint changes. A second run reports `changed=0`.
 
 ## Requirements (control machine)
 
@@ -56,4 +170,6 @@ Deploy a single component: `ansible-playbook site.yml --tags <role>`.
 
 ## AI usage
 
-TODO: describe which parts were generated or assisted by AI.
+<!-- TODO: write once the project is reimplemented. The subject requires
+     clearly identifying what was generated by AI tools. -->
+TODO
